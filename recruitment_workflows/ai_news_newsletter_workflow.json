@@ -1,0 +1,419 @@
+{
+  "name": "AI News Daily Newsletter Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-1",
+      "name": "Daily 8AM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://openai.com/blog/rss.xml",
+        "options": {
+          "ignoreSSL": true
+        }
+      },
+      "id": "rss-openai",
+      "name": "OpenAI Blog RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [460, 140]
+    },
+    {
+      "parameters": {
+        "url": "https://research.google/blog/rss",
+        "options": {
+          "ignoreSSL": true
+        }
+      },
+      "id": "rss-google-ai",
+      "name": "Google Research Blog RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [460, 220]
+    },
+    {
+      "parameters": {
+        "url": "https://techcrunch.com/category/artificial-intelligence/feed/",
+        "options": {
+          "ignoreSSL": true
+        }
+      },
+      "id": "rss-techcrunch",
+      "name": "TechCrunch AI RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://marktechpost.com/feed",
+        "options": {
+          "ignoreSSL": true
+        }
+      },
+      "id": "rss-venturebeat",
+      "name": "MarkTechPost RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [460, 380]
+    },
+    {
+      "parameters": {
+        "url": "https://www.artificialintelligence-news.com/feed/",
+        "options": {
+          "ignoreSSL": true
+        }
+      },
+      "id": "rss-ai-news",
+      "name": "AI News RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [460, 460]
+    },
+    {
+      "parameters": {
+        "url": "https://www.technologyreview.com/feed/",
+        "options": {
+          "ignoreSSL": true
+        }
+      },
+      "id": "rss-mit-tech",
+      "name": "MIT Tech Review RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [460, 540]
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "options": {}
+      },
+      "id": "merge-rss-feeds",
+      "name": "Merge RSS Feeds",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [680, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter articles from last 7 days and remove duplicates\nconst now = new Date();\nconst sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nconst items = $input.all();\nconsole.log(`Processing ${items.length} total RSS items`);\n\nconst seenUrls = new Set();\nconst seenTitles = new Set();\nconst filteredItems = [];\nlet oldArticles = 0;\nlet duplicateUrls = 0;\nlet duplicateTitles = 0;\n\nfor (const item of items) {\n  const pubDate = new Date(item.json.pubDate || item.json.published || item.json.date);\n  \n  // Skip if older than 7 days (more lenient than 24 hours)\n  if (pubDate < sevenDaysAgo) {\n    oldArticles++;\n    continue;\n  }\n  \n  // Deduplicate by URL\n  if (seenUrls.has(item.json.link)) {\n    duplicateUrls++;\n    continue;\n  }\n  seenUrls.add(item.json.link);\n  \n  // Deduplicate by similar titles (simple approach)\n  const titleLower = item.json.title.toLowerCase();\n  let isDuplicate = false;\n  for (const seenTitle of seenTitles) {\n    if (titleLower.includes(seenTitle) || seenTitle.includes(titleLower)) {\n      isDuplicate = true;\n      break;\n    }\n  }\n  \n  if (!isDuplicate) {\n    seenTitles.add(titleLower);\n    \n    // Add source information\n    let source = 'Unknown';\n    if (item.json.link.includes('openai.com')) source = 'OpenAI';\n    else if (item.json.link.includes('research.google')) source = 'Google Research';\n    else if (item.json.link.includes('techcrunch.com')) source = 'TechCrunch';\n    else if (item.json.link.includes('marktechpost.com')) source = 'MarkTechPost';\n    else if (item.json.link.includes('artificialintelligence-news.com')) source = 'AI News';\n    else if (item.json.link.includes('technologyreview.com')) source = 'MIT Technology Review';\n    \n    filteredItems.push({\n      title: item.json.title,\n      link: item.json.link,\n      description: item.json.description || item.json.contentSnippet,\n      pubDate: pubDate.toISOString(),\n      source: source\n    });\n  } else {\n    duplicateTitles++;\n  }\n}\n\nconsole.log(`Filtering results: ${oldArticles} old, ${duplicateUrls} duplicate URLs, ${duplicateTitles} duplicate titles`);\nconsole.log(`Final filtered articles: ${filteredItems.length}`);\n\n// Sort by publication date (newest first) and limit to top 10\nfilteredItems.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));\nconst topItems = filteredItems.slice(0, 10);\n\n// Ensure we always return at least something, even if no recent articles\nif (topItems.length === 0) {\n  console.log('No recent articles found, returning placeholder');\n  return [{\n    json: {\n      title: 'No Recent AI News Found',\n      link: '#',\n      description: 'No articles from the last 7 days were found. This may indicate RSS feed issues or a quiet news period.',\n      pubDate: now.toISOString(),\n      source: 'System'\n    }\n  }];\n}\n\nreturn topItems.map(item => ({ json: item }));"
+      },
+      "id": "filter-dedupe",
+      "name": "Filter & Deduplicate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 340]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": [
+          {
+            "id": "articles_data",
+            "name": "articles_for_summary",
+            "value": "={{ $json }}",
+            "type": "object"
+          },
+          {
+            "id": "current_date",
+            "name": "newsletter_date",
+            "value": "={{ $now.format('MMMM D, YYYY') }}",
+            "type": "string"
+          },
+          {
+            "id": "day_of_week",
+            "name": "day_of_week",
+            "value": "={{ $now.format('dddd') }}",
+            "type": "string"
+          }
+        ],
+        "options": {}
+      },
+      "id": "prepare-summary-data",
+      "name": "Prepare Summary Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1120, 340]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "aggregate-articles",
+      "name": "Aggregate Articles",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1.2,
+      "position": [1340, 340]
+    },
+    {
+      "parameters": {
+        "model": {
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 2000
+        }
+      },
+      "id": "openai-chat-model",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "You are an AI news curator creating a daily newsletter.\n\nAnalyze the provided AI news articles and create a professional newsletter with:\n\n1. A compelling subject line\n2. A brief intro paragraph (2-3 sentences)\n3. Select the 5-6 most important stories and categorize them:\n   - Research & Development\n   - Industry News\n   - Product Launches\n   - Business & Funding\n   - Policy & Ethics\n\nFor each story:\n- Write a 2-3 sentence summary\n- Include the source\n- Add the original link\n\nEnd with a brief closing note.\n\nFormat as clean text that can be converted to HTML.",
+        "hasOutputParser": false,
+        "options": {}
+      },
+      "id": "ai-agent-summarizer",
+      "name": "AI Newsletter Generator",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [1560, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Convert the AI-generated newsletter to HTML format\nconst newsletterText = $json.output || $json.text || $json.content;\n\n// Create current date if not available from previous nodes\nconst now = new Date();\nconst date = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });\nconst dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });\n\n// Create HTML newsletter with proper escaping\nconst html = `<!DOCTYPE html>\n<html>\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>AI News Daily - ${date}</title>\n    <style>\n        body {\n            font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif;\n            line-height: 1.6;\n            color: #333;\n            max-width: 600px;\n            margin: 0 auto;\n            padding: 20px;\n            background-color: #f5f5f5;\n        }\n        .newsletter {\n            background: white;\n            border-radius: 8px;\n            padding: 30px;\n            box-shadow: 0 2px 10px rgba(0,0,0,0.1);\n        }\n        .header {\n            text-align: center;\n            border-bottom: 3px solid #2196F3;\n            padding-bottom: 20px;\n            margin-bottom: 30px;\n        }\n        .header h1 {\n            color: #2196F3;\n            margin: 0;\n            font-size: 28px;\n        }\n        .header .date {\n            color: #666;\n            font-size: 16px;\n            margin-top: 5px;\n        }\n        .article {\n            background: #fafafa;\n            border-radius: 6px;\n            padding: 15px;\n            margin: 15px 0;\n            border-left: 3px solid #FF9800;\n        }\n        .footer {\n            text-align: center;\n            margin-top: 40px;\n            padding-top: 20px;\n            border-top: 1px solid #ddd;\n            color: #666;\n            font-size: 14px;\n        }\n    </style>\n</head>\n<body>\n    <div class=\"newsletter\">\n        <div class=\"header\">\n            <h1>🤖 AI News Daily</h1>\n            <div class=\"date\">${dayOfWeek}, ${date}</div>\n        </div>\n        <div class=\"content\">${newsletterText}</div>\n        <div class=\"footer\">\n            <p>This newsletter was automatically generated using AI news aggregation and summarization.</p>\n            <p>Sources: OpenAI, Google Research, TechCrunch, MarkTechPost, MIT Technology Review, AI News</p>\n        </div>\n    </div>\n</body>\n</html>`;\n\n// Extract subject line from the newsletter text\nconst subjectMatch = newsletterText.match(/Subject[:\\s]*(.+?)\\n/i);\nconst subject = subjectMatch ? subjectMatch[1].trim() : `AI News Daily - ${date}`;\n\nreturn [{\n  json: {\n    html: html,\n    subject: subject,\n    date: date,\n    dayOfWeek: dayOfWeek,\n    raw_content: newsletterText\n  }\n}];"
+      },
+      "id": "format-html-newsletter",
+      "name": "Format HTML Newsletter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 340]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "to": "={{ $vars.recipient_email || 'your-email@example.com' }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "gmail-send",
+      "name": "Send Newsletter via Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2000, 340]
+    }
+  ],
+  "connections": {
+    "Daily 8AM Trigger": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Blog RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Google Research Blog RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "TechCrunch AI RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "MarkTechPost RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AI News RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "MIT Tech Review RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Blog RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge RSS Feeds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Research Blog RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge RSS Feeds",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "TechCrunch AI RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge RSS Feeds",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "MarkTechPost RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge RSS Feeds",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "AI News RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge RSS Feeds",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "MIT Tech Review RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge RSS Feeds",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Merge RSS Feeds": {
+      "main": [
+        [
+          {
+            "node": "Filter & Deduplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter & Deduplicate": {
+      "main": [
+        [
+          {
+            "node": "Prepare Summary Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Summary Data": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Articles": {
+      "main": [
+        [
+          {
+            "node": "AI Newsletter Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Newsletter Generator",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Newsletter Generator": {
+      "main": [
+        [
+          {
+            "node": "Format HTML Newsletter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format HTML Newsletter": {
+      "main": [
+        [
+          {
+            "node": "Send Newsletter via Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "id": "ai-automation",
+      "name": "AI Automation"
+    },
+    {
+      "id": "newsletter",
+      "name": "Newsletter"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-09-23T09:30:00.000Z",
+  "versionId": "1"
+}
